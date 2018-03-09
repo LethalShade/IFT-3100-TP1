@@ -1,10 +1,6 @@
 #pragma once
 
-#include "ofMain.h"
-#include "Scene.h"
 #include "CmdController.h"
-#include <iostream>
-#include <string>
 
 class ofApp : public ofBaseApp
 {

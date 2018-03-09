@@ -24,19 +24,29 @@ public:
 	
 	bool execute();
 
+	// Commandes de debug
 	bool currentDir();
 
+	// Commandes générales
 	void draw();
-
+	bool changeType(SceneType type);
 	bool printScene();
-	bool changeColor(int id);
-	bool printText();
-	bool loadImage(const std::string &path, int x = 0, int y = 0);
-	bool unloadImage();
+	bool changeColor(const std::string &name);
+	bool eraseElement(const std::string &name);
+	bool transform(const std::string &name, int x = -1, int y = -1, int z = -1);
+
+	// Commandes 2D
+	bool printText(const std::string &text, int x = 0, int y = 32, int s = 32);
+	bool loadImage(const std::string &path, int x = 0, int y = 0, int w = -1, int h = -1);
+	bool resizeText(const std::string &name, int s = -1);
+	bool resizePic(const std::string &name, int w = -1, int h = -1);
+
+	// Commandes 3D
+	bool makePremadeCube(int x = 0, int y = 0, int z = 0);
+	bool makePremadeCone(int x = 0, int y = 0, int z = 0);
 
 private:
 	std::vector<std::string> parseBuffer();
-
 	std::string buffer;
 
 	Scene scene;

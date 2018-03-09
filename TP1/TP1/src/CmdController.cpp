@@ -1,7 +1,5 @@
 #include "CmdController.h"
 
-
-
 CmdController::CmdController()
 {
 	type = S2D;
@@ -40,17 +38,54 @@ bool CmdController::execute()
 	std::cout << "[EXECUTION]: " << buffer << std::endl;
 	buffer.clear();
 
-	if (parsedCommand[0] == "cdir")
+	if (parsedCommand[0] == "2d" && parsedCommand.size() == 1)
+		return (changeType(S2D));
+	if (parsedCommand[0] == "3d" && parsedCommand.size() == 1)
+		return (changeType(S3D));
+
+	if (parsedCommand[0] == "tf")
+		if (parsedCommand.size() == 5)
+			return (transform(parsedCommand[1], stoi(parsedCommand[2]), stoi(parsedCommand[3]), stoi(parsedCommand[4])));
+		else if (parsedCommand.size() == 4)
+			return (transform(parsedCommand[1], stoi(parsedCommand[2]), stoi(parsedCommand[3])));
+
+	if (parsedCommand[0] == "color" && parsedCommand.size() == 3)
+		return (changeColor(parsedCommand[1]));
+
+	if (parsedCommand[0] == "cdir" && parsedCommand.size() == 1)
 		return (currentDir());
+
+	if (parsedCommand[0] == "rm" && parsedCommand.size() == 2)
+		return (eraseElement(parsedCommand[1]));
 
 	if (parsedCommand[0] == "load")
 		if (parsedCommand.size() == 4)
 			return (loadImage(parsedCommand[1], stoi(parsedCommand[2]), stoi(parsedCommand[3])));
-		else
+		else if (parsedCommand.size() == 2)
 			return (loadImage(parsedCommand[1]));
 
-	if (parsedCommand[0] == "scene")
+	if (parsedCommand[0] == "scene" && parsedCommand.size() == 1)
 		return (printScene());
+
+	if (parsedCommand[0] == "print")
+		if (parsedCommand.size() == 5)
+			return (printText(parsedCommand[1], stoi(parsedCommand[2]), stoi(parsedCommand[3]), stoi(parsedCommand[4])));
+		else if (parsedCommand.size() == 4)
+			return (printText(parsedCommand[1], stoi(parsedCommand[2]), stoi(parsedCommand[3])));
+		else if (parsedCommand.size() == 2)
+			return (printText(parsedCommand[1]));
+
+	if (parsedCommand[0] == "size")
+		if (parsedCommand.size() == 4)
+			return (resizePic(parsedCommand[1], stoi(parsedCommand[2]), stoi(parsedCommand[3])));
+		else if (parsedCommand.size() == 3)
+			return (resizeText(parsedCommand[1], stoi(parsedCommand[2])));
+
+	if (parsedCommand[0] == "exit")
+		exit(1);
+
+	if (parsedCommand[0] == "cube")
+		return (makePremadeCube());
 
 	return (false);
 }
@@ -59,9 +94,9 @@ bool CmdController::currentDir()
 {
 	WCHAR pBuf[512];
 
-	int bytes = GetModuleFileName(NULL, (LPWSTR)&pBuf, 512);
+	int bytes = GetModuleFileNameW(NULL, (LPWSTR)&pBuf, 512);
 	if (bytes == 0)
-		return -1;
+		return false;
 
 	std::wstring sBuf(pBuf);
 
@@ -77,6 +112,12 @@ void CmdController::draw()
 		scene.drawScene();
 }
 
+bool CmdController::changeType(SceneType type)
+{
+	this->type = type;
+	return (true);
+}
+
 bool CmdController::printScene()
 {
 	std::list<Drawable> graph = scene.getGraph();
@@ -87,21 +128,66 @@ bool CmdController::printScene()
 		std::string type = scene.typeToString(it->type);
 		std::cout << type << ": " << it->name << " | ";
 	}
+	std::cout << std::endl;
 
 	return (true);
 }
 
-bool CmdController::changeColor(int id)
+bool CmdController::changeColor(const std::string &name)
 {
+	Drawable *drawable = scene.getDrawable(name);
+
+	drawable->color = ofColor::black;
+
 	return (true);
 }
 
-bool CmdController::printText()
+bool CmdController::eraseElement(const std::string &name)
 {
+	return (scene.eraseDrawable(name));
+}
+
+bool CmdController::transform(const std::string &name, int x, int y, int z)
+{
+	Drawable *drawable = scene.getDrawable(name);
+
+	if (drawable == NULL)
+		return (false);
+
+	switch (drawable->type)
+	{
+	case IMAGE:
+		drawable->image.x = x;
+		drawable->image.y = y;
+		break;
+	case MODEL:
+		drawable->model.x = x;
+		drawable->model.y = y;
+		drawable->model.z = z;
+		drawable->model.drawable.setPosition(x, y, z);
+		break;
+	case TEXT:
+		drawable->text.x = x;
+		drawable->text.y = y;
+		break;
+	}
 	return (true);
 }
 
-bool CmdController::loadImage(const std::string &path, int x, int y)
+bool CmdController::printText(const std::string &text, int x, int y, int s)
+{
+	ofTrueTypeFont font;
+
+	font.loadFont("arial.ttf", s);
+
+	Drawable newDrawable(font, text, "", x, y, s);
+
+	scene.addDrawable(newDrawable);
+
+	return (true);
+}
+
+bool CmdController::loadImage(const std::string &path, int x, int y, int w, int h)
 {
 	std::ostringstream oss;
 	ofImage newImage;
@@ -110,7 +196,6 @@ bool CmdController::loadImage(const std::string &path, int x, int y)
 	std::string absPath = ofFilePath::getAbsolutePath(path);
 
 	file.open(absPath);
-	//file.open(path);
 
 	if (!file.exists())
 		return (false);
@@ -119,7 +204,7 @@ bool CmdController::loadImage(const std::string &path, int x, int y)
 		
 	oss << ofFilePath::getBaseName(path) << x << y;
 
-	Drawable newDrawable(newImage, oss.str(), x, y);
+	Drawable newDrawable(newImage, oss.str(), x, y, w, h);
 
 	scene.addDrawable(newDrawable);
 
@@ -129,18 +214,6 @@ bool CmdController::loadImage(const std::string &path, int x, int y)
 std::vector<std::string> CmdController::parseBuffer()
 {
 	std::vector<std::string> parsedCommand;
-
-	/*for (int i = 0; i < buffer.length(); i++)
-	{
-		int separator = buffer.find(' ', i);
-
-		if (separator == string::npos)
-			separator = buffer.length();
-
-		parsedCommand.push_back(buffer.substr(i, separator - i));
-
-		i = separator;
-	}*/
 
 	for (int i = 0; i < buffer.length(); i++)
 	{
@@ -168,4 +241,55 @@ std::vector<std::string> CmdController::parseBuffer()
 	}
 
 	return (parsedCommand);
+}
+
+bool CmdController::resizeText(const std::string &name, int s)
+{
+	Drawable *drawable = scene.getDrawable(name);
+
+	if (drawable->type != TEXT)
+		return (false);
+
+	drawable->text.s = s;
+
+	drawable->text.drawable.loadFont("arial.ttf", s);
+
+	return (true);
+}
+
+bool CmdController::resizePic(const std::string &name, int w, int h)
+{
+	Drawable *drawable = scene.getDrawable(name);
+
+	if (drawable->type != IMAGE)
+		return (false);
+
+	drawable->image.w = w;
+	drawable->image.h = h;
+
+	return (true);
+}
+
+bool CmdController::makePremadeCube(int x, int y, int z)
+{
+	ofBoxPrimitive box;
+
+	box.set(200);
+
+	x = ofGetWidth()*.2;
+
+	y = ofGetHeight()*.75;
+
+	box.setPosition(x, y, z);
+
+	Drawable newDrawable(box, "SomeBox", x, y, z);
+
+	scene.addDrawable(newDrawable);
+
+	return (true);
+}
+
+bool CmdController::makePremadeCone(int x, int y, int z)
+{
+	return (true);
 }
