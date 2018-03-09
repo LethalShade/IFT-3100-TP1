@@ -2,15 +2,12 @@
 
 #include "ofMain.h"
 #include "Scene.h"
+#include "CmdController.h"
+#include <iostream>
+#include <string>
 
 class ofApp : public ofBaseApp
 {
-	enum SceneType
-	{
-		S2D = 0,
-		S3D = 1
-	};
-
 public:
 	void setup();
 	void update();
@@ -29,6 +26,6 @@ public:
 	void gotMessage(ofMessage msg);
 
 private:
-	Scene scene;
-	SceneType type;
+	CmdController cmd;
+	ofTrueTypeFont font;
 };
