@@ -49,6 +49,12 @@ bool CmdController::execute()
 		else if (parsedCommand.size() == 4)
 			return (transform(parsedCommand[1], stoi(parsedCommand[2]), stoi(parsedCommand[3])));
 
+	if (parsedCommand[0] == "mv")
+		if (parsedCommand.size() == 5)
+			return (move(parsedCommand[1], stoi(parsedCommand[2]), stoi(parsedCommand[3]), stoi(parsedCommand[4])));
+		else if (parsedCommand.size() == 4)
+			return (move(parsedCommand[1], stoi(parsedCommand[2]), stoi(parsedCommand[3])));
+
 	if (parsedCommand[0] == "color" && parsedCommand.size() == 3)
 		return (changeColor(parsedCommand[1]));
 
@@ -84,8 +90,33 @@ bool CmdController::execute()
 	if (parsedCommand[0] == "exit")
 		exit(1);
 
+	if (parsedCommand[0] == "rectangle")
+		return (makePremadeRectangle());
+
+	if (parsedCommand[0] == "circle")
+		return (makePremadeCircle());
+
+	if (parsedCommand[0] == "triangle")
+		return (makePremadeTriangle());
+
+
 	if (parsedCommand[0] == "cube")
 		return (makePremadeCube());
+
+	if (parsedCommand[0] == "sphere")
+		return (makePremadeSphere());
+
+	if (parsedCommand[0] == "cone")
+		return (makePremadeCone());
+
+	if (parsedCommand[0] == "cylinder")
+		return (makePremadeCylinder());
+
+	if (parsedCommand[0] == "plane")
+		return (makePremadePlane());
+
+	if (parsedCommand[0] == "apply" && parsedCommand.size() == 3)
+		return (applyTexture(parsedCommand[1], parsedCommand[2]));
 
 	return (false);
 }
@@ -137,8 +168,20 @@ bool CmdController::changeColor(const std::string &name)
 {
 	Drawable *drawable = scene.getDrawable(name);
 
+	if (drawable == NULL)
+		return (false);
+
 	drawable->color = ofColor::black;
 
+	return (true);
+}
+
+bool CmdController::changeColorListener(const void *sender, ofColor &color)
+{
+	std::list<Drawable *> selected = scene.getSelected();
+
+	for (auto it = selected.begin(); it != selected.end(); it++)
+		(*it)->color = color;
 	return (true);
 }
 
@@ -147,7 +190,12 @@ bool CmdController::eraseElement(const std::string &name)
 	return (scene.eraseDrawable(name));
 }
 
-bool CmdController::transform(const std::string &name, int x, int y, int z)
+bool CmdController::eraseSelected()
+{
+	return (scene.eraseDrawable());
+}
+
+bool CmdController::move(const std::string &name, int x, int y, int z)
 {
 	Drawable *drawable = scene.getDrawable(name);
 
@@ -157,20 +205,88 @@ bool CmdController::transform(const std::string &name, int x, int y, int z)
 	switch (drawable->type)
 	{
 	case IMAGE:
-		drawable->image.x = x;
-		drawable->image.y = y;
+		drawable->x = x;
+		drawable->y = y;
 		break;
 	case MODEL:
-		drawable->model.x = x;
-		drawable->model.y = y;
-		drawable->model.z = z;
+		drawable->x = x;
+		drawable->y = y;
+		drawable->z = z;
 		drawable->model.drawable.setPosition(x, y, z);
 		break;
 	case TEXT:
-		drawable->text.x = x;
-		drawable->text.y = y;
+		drawable->x = x;
+		drawable->y = y;
+		break;
+	case SHAPE:
+		drawable->x = x;
+		drawable->y = y;
+		drawable->shape.drawable.moveTo(x, y);
 		break;
 	}
+	return (true);
+}
+
+bool CmdController::transform(const std::string &name, int x, int y, int z)
+{
+	Drawable *drawable = scene.getDrawable(name);
+	int newX;
+	int newY;
+	int newZ;
+
+	newX = drawable->x + x;
+	newY = drawable->y + y;
+	newZ = drawable->z + z;
+
+	if (drawable == NULL)
+		return (false);
+
+	switch (drawable->type)
+	{
+	case IMAGE:
+		drawable->x = newX;
+		drawable->y = newY;
+		break;
+	case MODEL:
+		drawable->x = newX;
+		drawable->y = newY;
+		drawable->z = newZ;
+		drawable->model.drawable.setPosition(newX, newY, newZ);
+		break;
+	case TEXT:
+		drawable->x = newX;
+		drawable->y = newY;
+		break;
+	case SHAPE:
+		drawable->x = newX;
+		drawable->y = newY;
+		drawable->shape.drawable.moveTo(newX, newY);
+		break;
+	}
+	return (true);
+}
+
+bool CmdController::transform(int x, int y, int z)
+{
+	std::list<Drawable *> selected = scene.getSelected();
+
+	for (auto it = selected.begin(); it != selected.end(); it++)
+		transform((*it)->name, x, y, z);
+	return (true);
+}
+
+bool CmdController::select(int x, int y)
+{
+	Drawable *drawable = scene.getDrawable(x, y);
+
+	if (drawable == NULL)
+		return (false);
+
+	if (!drawable->selected)
+		scene.selectDrawable(drawable);
+	else
+		scene.unselectDrawable(drawable);
+
 	return (true);
 }
 
@@ -247,7 +363,7 @@ bool CmdController::resizeText(const std::string &name, int s)
 {
 	Drawable *drawable = scene.getDrawable(name);
 
-	if (drawable->type != TEXT)
+	if (drawable == NULL || drawable->type != TEXT)
 		return (false);
 
 	drawable->text.s = s;
@@ -261,7 +377,7 @@ bool CmdController::resizePic(const std::string &name, int w, int h)
 {
 	Drawable *drawable = scene.getDrawable(name);
 
-	if (drawable->type != IMAGE)
+	if (drawable == NULL || drawable->type != IMAGE)
 		return (false);
 
 	drawable->image.w = w;
@@ -270,11 +386,50 @@ bool CmdController::resizePic(const std::string &name, int w, int h)
 	return (true);
 }
 
+bool CmdController::makePremadeTriangle(int x, int y, int z)
+{
+	ofPath path;
+
+	path.arc(x, y, x + 25, y - 50, x + 50, y);
+
+	Drawable newDrawable(path, "", x, y);
+
+	scene.addDrawable(newDrawable);
+
+	return (true);
+}
+
+bool CmdController::makePremadeRectangle(int x, int y, int z)
+{
+	ofPath path;
+
+	path.rectangle(x, y, 50, 50);
+
+	Drawable newDrawable(path, "", x, y);
+
+	scene.addDrawable(newDrawable);
+
+	return (true);
+}
+
+bool CmdController::makePremadeCircle(int x, int y, int z)
+{
+	ofPath path;
+
+	path.arc(x, y, 50, 50, 0, 360);
+
+	Drawable newDrawable(path, "", x, y);
+
+	scene.addDrawable(newDrawable);
+
+	return (true);
+}
+
 bool CmdController::makePremadeCube(int x, int y, int z)
 {
 	ofBoxPrimitive box;
 
-	box.set(200);
+	box.set(100);
 
 	x = ofGetWidth()*.2;
 
@@ -282,7 +437,28 @@ bool CmdController::makePremadeCube(int x, int y, int z)
 
 	box.setPosition(x, y, z);
 
-	Drawable newDrawable(box, "SomeBox", x, y, z);
+	Drawable newDrawable(box, "SomeBox");
+
+	scene.addDrawable(newDrawable);
+
+	return (true);
+}
+
+bool CmdController::makePremadeSphere(int x, int y, int z)
+{
+	ofSpherePrimitive sphere;
+
+
+
+	sphere.setRadius(100);
+
+	x = ofGetWidth()*.2;
+
+	y = ofGetHeight()*.75;
+
+	sphere.setPosition(x, y, z);
+
+	Drawable newDrawable(sphere, "SomeSphere");
 
 	scene.addDrawable(newDrawable);
 
@@ -291,5 +467,89 @@ bool CmdController::makePremadeCube(int x, int y, int z)
 
 bool CmdController::makePremadeCone(int x, int y, int z)
 {
+	ofConePrimitive cone;
+
+	cone.set(50, 100, 4, 4);
+
+	x = ofGetWidth()*.2;
+
+	y = ofGetHeight()*.75;
+
+	cone.setPosition(x, y, z);
+
+	Drawable newDrawable(cone, "SomeCone");
+
+	scene.addDrawable(newDrawable);
+
+	return (true);
+}
+
+bool CmdController::makePremadeCylinder(int x, int y, int z)
+{
+	ofCylinderPrimitive cylinder;
+
+	cylinder.set(50, 100);
+
+	x = ofGetWidth()*.2;
+
+	y = ofGetHeight()*.75;
+
+	cylinder.setPosition(x, y, z);
+
+	Drawable newDrawable(cylinder, "SomeCylinder");
+
+	scene.addDrawable(newDrawable);
+
+	return (true);
+}
+
+bool CmdController::makePremadePlane(int x, int y, int z)
+{
+	ofPlanePrimitive plane;
+
+	plane.set(640, 480);
+
+	x = ofGetWidth()*.2;
+
+	y = ofGetHeight()*.75;
+
+	plane.setPosition(x, y, z);
+
+	Drawable newDrawable(plane, "SomePlane");
+
+	scene.addDrawable(newDrawable);
+
+	return (true);
+}
+
+bool CmdController::applyTexture(const std::string &path, const std::string &name)
+{
+	ofImage newImage;
+	ofFile file;
+	Drawable *drawable = scene.getDrawable(name);
+
+	if (drawable == NULL || drawable->type != MODEL)
+		return (false);
+
+	std::string absPath = ofFilePath::getAbsolutePath(path);
+
+	file.open(absPath);
+
+	if (!file.exists())
+	{
+		Drawable *image = scene.getDrawable(path);
+
+		if (image == NULL || image->type != IMAGE)
+			return (false);
+
+		newImage = image->image.drawable;
+	}
+	else
+	{
+		newImage.load(path);
+	}
+
+	drawable->model.texture = newImage.getTexture();
+
 	return (true);
 }

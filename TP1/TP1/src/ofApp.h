@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CmdController.h"
+#include "ofxGui.h"
 
 class ofApp : public ofBaseApp
 {
@@ -23,5 +24,14 @@ public:
 
 private:
 	CmdController cmd;
-	ofTrueTypeFont font;
+
+	ofxPanel gui;
+
+	ofxColorSlider cSlider;
+	ofParameter<ofColor> sliderColor;
+
+	ofSpherePrimitive test;
+
+	int prevMouseX;
+	int prevMouseY;
 };
