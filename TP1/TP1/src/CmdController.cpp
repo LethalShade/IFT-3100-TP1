@@ -1,8 +1,7 @@
 #include "CmdController.h"
 
-CmdController::CmdController()
+CmdController::CmdController() : type(S2D), currentId(0)
 {
-	type = S2D;
 }
 
 
@@ -33,8 +32,11 @@ void CmdController::eraseLastChar()
 
 bool CmdController::execute()
 {
+	if (buffer.empty())
+		return (false);
+
 	std::vector<std::string> parsedCommand = parseBuffer();
-	
+
 	std::cout << "[EXECUTION]: " << buffer << std::endl;
 	buffer.clear();
 
@@ -64,11 +66,20 @@ bool CmdController::execute()
 	if (parsedCommand[0] == "rm" && parsedCommand.size() == 2)
 		return (eraseElement(parsedCommand[1]));
 
-	if (parsedCommand[0] == "load")
-		if (parsedCommand.size() == 4)
-			return (loadImage(parsedCommand[1], stoi(parsedCommand[2]), stoi(parsedCommand[3])));
-		else if (parsedCommand.size() == 2)
-			return (loadImage(parsedCommand[1]));
+	if (parsedCommand[0] == "select" && parsedCommand.size() == 2)
+		return (select(parsedCommand[1]));
+
+	if (parsedCommand[0] == "load" && parsedCommand.size() > 2 && parsedCommand[1] == "image")
+		if (parsedCommand.size() == 5)
+			return (loadImage(parsedCommand[2], stoi(parsedCommand[3]), stoi(parsedCommand[4])));
+		else if (parsedCommand.size() == 3)
+			return (loadImage(parsedCommand[2]));
+
+	if (parsedCommand[0] == "load" && parsedCommand.size() > 2 && parsedCommand[1] == "model")
+		if (parsedCommand.size() == 5)
+			return (loadModel(parsedCommand[2], stoi(parsedCommand[3]), stoi(parsedCommand[4])));
+		else if (parsedCommand.size() == 3)
+			return (loadModel(parsedCommand[2]));
 
 	if (parsedCommand[0] == "scene" && parsedCommand.size() == 1)
 		return (printScene());
@@ -94,7 +105,7 @@ bool CmdController::execute()
 		return (makePremadeRectangle());
 
 	if (parsedCommand[0] == "circle")
-		return (makePremadeCircle());
+		return (makePremadeEllipse());
 
 	if (parsedCommand[0] == "triangle")
 		return (makePremadeTriangle());
@@ -118,11 +129,24 @@ bool CmdController::execute()
 	if (parsedCommand[0] == "apply" && parsedCommand.size() == 3)
 		return (applyTexture(parsedCommand[1], parsedCommand[2]));
 
+	if (parsedCommand[0] == "capture" && parsedCommand.size() == 2)
+		return (captureScreen(parsedCommand[1]));
+
+	if (parsedCommand[0] == "faces" && parsedCommand.size() == 2)
+		return (renderFaces(parsedCommand[1]));
+
+	if (parsedCommand[0] == "wireframe" && parsedCommand.size() == 2)
+		return (renderWireFrame(parsedCommand[1]));
+
+	if (parsedCommand[0] == "vertices" && parsedCommand.size() == 2)
+		return (renderVertices(parsedCommand[1]));
+
 	return (false);
 }
 
 bool CmdController::currentDir()
 {
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
 	WCHAR pBuf[512];
 
 	int bytes = GetModuleFileNameW(NULL, (LPWSTR)&pBuf, 512);
@@ -133,14 +157,24 @@ bool CmdController::currentDir()
 
 	std::wcout << sBuf << std::endl;
 	return (true);
+#endif
+	return (false);
 }
 
 void CmdController::draw()
 {
-	if (type == S2D)
+	DrawableObject *selectionRectangle = scene.getSelectionRectangle();
+
+	//if (type == S2D)
 		scene.drawImages();
-	else
+	//else
 		scene.drawScene();
+
+	if (selectionRectangle->x != -1 && selectionRectangle->y != -1)
+	{
+		ofSetColor(ofColor(255, 0, 0, 98));
+		ofDrawRectangle(selectionRectangle->x, selectionRectangle->y, selectionRectangle->w, selectionRectangle->h);
+	}
 }
 
 bool CmdController::changeType(SceneType type)
@@ -151,7 +185,7 @@ bool CmdController::changeType(SceneType type)
 
 bool CmdController::printScene()
 {
-	std::list<Drawable> graph = scene.getGraph();
+	std::list<DrawableObject> graph = scene.getGraph();
 
 	std::cout << "| ";
 	for (auto it = graph.begin(); it != graph.end(); it++)
@@ -166,7 +200,7 @@ bool CmdController::printScene()
 
 bool CmdController::changeColor(const std::string &name)
 {
-	Drawable *drawable = scene.getDrawable(name);
+	DrawableObject *drawable = scene.getDrawable(name);
 
 	if (drawable == NULL)
 		return (false);
@@ -176,12 +210,102 @@ bool CmdController::changeColor(const std::string &name)
 	return (true);
 }
 
-bool CmdController::changeColorListener(const void *sender, ofColor &color)
+bool CmdController::changeFillColorListener(const void *sender, ofColor &color)
 {
-	std::list<Drawable *> selected = scene.getSelected();
+	std::list<DrawableObject *> selected = scene.getSelected();
 
 	for (auto it = selected.begin(); it != selected.end(); it++)
 		(*it)->color = color;
+	return (true);
+}
+
+bool CmdController::changeOutlineColorListener(const void *sender, ofColor &color)
+{
+	std::list<DrawableObject *> selected = scene.getSelected();
+
+	for (auto it = selected.begin(); it != selected.end(); it++)
+		if ((*it)->type == SHAPE)
+			(*it)->shape.drawable.setStrokeColor(color);
+	return (true);
+}
+
+
+bool CmdController::changeOutlineListener(const void *sender, int &width)
+{
+	std::list<DrawableObject *> selected = scene.getSelected();
+
+	for (auto it = selected.begin(); it != selected.end(); it++)
+		if ((*it)->type == SHAPE)
+			(*it)->shape.drawable.setStrokeWidth(width);
+	return (true);
+}
+
+
+bool CmdController::sizeUp()
+{
+	std::list<DrawableObject *> selected = scene.getSelected();
+
+	for (auto it = selected.begin(); it != selected.end(); it++)
+	{
+		//resize(*it, (*it)->s < 100 ? (*it)->s + 0.01 : (*it)->s);
+		resize(*it, 1.01);
+	}
+	return (true);
+}
+
+
+bool CmdController::sizeDown()
+{
+	std::list<DrawableObject *> selected = scene.getSelected();
+
+	for (auto it = selected.begin(); it != selected.end(); it++)
+	{
+		//resize(*it, (*it)->s > 0 ? (*it)->s - 0.01 : (*it)->s);
+		resize(*it, 0.99);
+	}
+	return (true);
+}
+
+
+bool CmdController::resize(DrawableObject *drawable, float scale)
+{
+	drawable->s *= scale;
+
+	switch (drawable->type)
+	{
+	case IMAGE:
+		drawable->image.drawable.resize(scale * drawable->w, scale * drawable->h);
+		break;
+	case PRIMITIVE:
+		drawable->primitive.drawable.setScale(scale);
+		break;
+	case TEXT:
+		drawable->text.drawable.loadFont("arial.ttf", drawable->text.s * scale);
+		break;
+	case SHAPE:
+		drawable->shape.drawable.scale(scale, scale);
+		break;
+	case MODEL:
+		drawable->model.drawable.setScale(scale, scale, scale);
+	}
+	return (true);
+}
+
+bool CmdController::rotateUp()
+{
+	std::list<DrawableObject *> selected = scene.getSelected();
+
+	for (auto it = selected.begin(); it != selected.end(); it++)
+		(*it)->r = (*it)->r + 0.5 >= 360 ? 0 : (*it)->r + 0.5;
+	return (true);
+}
+
+bool CmdController::rotateDown()
+{
+	std::list<DrawableObject *> selected = scene.getSelected();
+
+	for (auto it = selected.begin(); it != selected.end(); it++)
+		(*it)->r = (*it)->r - 0.5 < 0 ? 359.5 : (*it)->r - 0.5;
 	return (true);
 }
 
@@ -197,7 +321,7 @@ bool CmdController::eraseSelected()
 
 bool CmdController::move(const std::string &name, int x, int y, int z)
 {
-	Drawable *drawable = scene.getDrawable(name);
+	DrawableObject *drawable = scene.getDrawable(name);
 
 	if (drawable == NULL)
 		return (false);
@@ -208,11 +332,11 @@ bool CmdController::move(const std::string &name, int x, int y, int z)
 		drawable->x = x;
 		drawable->y = y;
 		break;
-	case MODEL:
+	case PRIMITIVE:
 		drawable->x = x;
 		drawable->y = y;
 		drawable->z = z;
-		drawable->model.drawable.setPosition(x, y, z);
+		drawable->primitive.drawable.setPosition(x, y, z);
 		break;
 	case TEXT:
 		drawable->x = x;
@@ -221,7 +345,12 @@ bool CmdController::move(const std::string &name, int x, int y, int z)
 	case SHAPE:
 		drawable->x = x;
 		drawable->y = y;
-		drawable->shape.drawable.moveTo(x, y);
+		break;
+	case MODEL:
+		drawable->x = x;
+		drawable->y = y;
+		drawable->z = z;
+		drawable->primitive.drawable.setPosition(x, y, z);
 		break;
 	}
 	return (true);
@@ -229,7 +358,7 @@ bool CmdController::move(const std::string &name, int x, int y, int z)
 
 bool CmdController::transform(const std::string &name, int x, int y, int z)
 {
-	Drawable *drawable = scene.getDrawable(name);
+	DrawableObject *drawable = scene.getDrawable(name);
 	int newX;
 	int newY;
 	int newZ;
@@ -246,12 +375,13 @@ bool CmdController::transform(const std::string &name, int x, int y, int z)
 	case IMAGE:
 		drawable->x = newX;
 		drawable->y = newY;
+		//drawable->image.drawable.rotate90(45);
 		break;
-	case MODEL:
+	case PRIMITIVE:
 		drawable->x = newX;
 		drawable->y = newY;
 		drawable->z = newZ;
-		drawable->model.drawable.setPosition(newX, newY, newZ);
+		drawable->primitive.drawable.setPosition(newX, newY, newZ);
 		break;
 	case TEXT:
 		drawable->x = newX;
@@ -260,15 +390,23 @@ bool CmdController::transform(const std::string &name, int x, int y, int z)
 	case SHAPE:
 		drawable->x = newX;
 		drawable->y = newY;
-		drawable->shape.drawable.moveTo(newX, newY);
+		//drawable->shape.drawable.rotate(1, ofVec3f(0, 0, 1));
 		break;
+	case MODEL:
+		drawable->x = newX;
+		drawable->y = newY;
+		drawable->z = newZ;
+		drawable->model.drawable.setPosition(newX, newY, newZ);
 	}
 	return (true);
 }
 
 bool CmdController::transform(int x, int y, int z)
 {
-	std::list<Drawable *> selected = scene.getSelected();
+	std::list<DrawableObject *> selected = scene.getSelected();
+
+	if (selected.size() == 0)
+		return (false);
 
 	for (auto it = selected.begin(); it != selected.end(); it++)
 		transform((*it)->name, x, y, z);
@@ -277,7 +415,21 @@ bool CmdController::transform(int x, int y, int z)
 
 bool CmdController::select(int x, int y)
 {
-	Drawable *drawable = scene.getDrawable(x, y);
+	DrawableObject *drawable = scene.getDrawable(x, y);
+
+	if (drawable == NULL)
+		scene.unselectDrawable();
+	else if (!drawable->selected)
+		scene.selectDrawable(drawable);
+	/*else
+		scene.unselectDrawable(drawable);*/
+
+	return (true);
+}
+
+bool CmdController::select(const std::string &name)
+{
+	DrawableObject *drawable = scene.getDrawable(name);
 
 	if (drawable == NULL)
 		return (false);
@@ -290,15 +442,47 @@ bool CmdController::select(int x, int y)
 	return (true);
 }
 
+bool CmdController::extendZone(int x, int y)
+{
+	DrawableObject *selectionRectangle = scene.getSelectionRectangle();
+
+	if (selectionRectangle->x == -1 || selectionRectangle->y == -1)
+	{
+		selectionRectangle->x = x;
+		selectionRectangle->y = y;
+	}
+	else
+	{
+		selectionRectangle->w = x - selectionRectangle->x;
+		selectionRectangle->h = y - selectionRectangle->y;
+	}
+	return (true);
+}
+
+bool CmdController::selectZone(int x, int y)
+{
+	DrawableObject *selectionRectangle = scene.getSelectionRectangle();
+
+	scene.selectDrawable();
+
+	selectionRectangle->x = -1;
+	selectionRectangle->y = -1;
+	selectionRectangle->w = -1;
+	selectionRectangle->h = -1;
+	return (true);
+}
+
 bool CmdController::printText(const std::string &text, int x, int y, int s)
 {
 	ofTrueTypeFont font;
 
 	font.loadFont("arial.ttf", s);
 
-	Drawable newDrawable(font, text, "", x, y, s);
+	DrawableObject newDrawable(font, currentId++, text, "", x, y, s);
 
-	scene.addDrawable(newDrawable);
+	newDrawable.getPosition = [](DrawableObject *drawable) { return (ofVec3f(drawable->x, drawable->y, drawable->z)); };
+
+	scene.addDrawable(newDrawable, true);
 
 	return (true);
 }
@@ -317,12 +501,14 @@ bool CmdController::loadImage(const std::string &path, int x, int y, int w, int 
 		return (false);
 
 	newImage.load(path);
-		
+
 	oss << ofFilePath::getBaseName(path) << x << y;
 
-	Drawable newDrawable(newImage, oss.str(), x, y, w, h);
+	DrawableObject newDrawable(newImage, currentId++, oss.str(), x, y);
 
-	scene.addDrawable(newDrawable);
+	newDrawable.getPosition = [](DrawableObject *drawable) { return (ofVec3f(drawable->x, drawable->y, drawable->z)); };
+
+	scene.addDrawable(newDrawable, true);
 
 	return (true);
 }
@@ -361,7 +547,7 @@ std::vector<std::string> CmdController::parseBuffer()
 
 bool CmdController::resizeText(const std::string &name, int s)
 {
-	Drawable *drawable = scene.getDrawable(name);
+	DrawableObject *drawable = scene.getDrawable(name);
 
 	if (drawable == NULL || drawable->type != TEXT)
 		return (false);
@@ -375,52 +561,62 @@ bool CmdController::resizeText(const std::string &name, int s)
 
 bool CmdController::resizePic(const std::string &name, int w, int h)
 {
-	Drawable *drawable = scene.getDrawable(name);
+	DrawableObject *drawable = scene.getDrawable(name);
 
 	if (drawable == NULL || drawable->type != IMAGE)
 		return (false);
 
-	drawable->image.w = w;
-	drawable->image.h = h;
+	drawable->w = w;
+	drawable->h = h;
 
 	return (true);
 }
 
-bool CmdController::makePremadeTriangle(int x, int y, int z)
+bool CmdController::makePremadeTriangle(int x, int y, int z, int w, int h)
 {
 	ofPath path;
 
-	path.arc(x, y, x + 25, y - 50, x + 50, y);
+	//path.triangle(x - x, y - y, (w / 2), -h, w, y - y);
+	path.triangle(x - x, h, (w / 2), y - y, w, h);
 
-	Drawable newDrawable(path, "", x, y);
+	DrawableObject newDrawable(path, currentId++, "", x, y, w, h);
 
-	scene.addDrawable(newDrawable);
+	newDrawable.getPosition = [](DrawableObject *drawable) { return (ofVec3f(drawable->x, drawable->y, drawable->z)); };
+
+	scene.addDrawable(newDrawable, true);
 
 	return (true);
 }
 
-bool CmdController::makePremadeRectangle(int x, int y, int z)
+bool CmdController::makePremadeRectangle(int x, int y, int z, int w, int h)
 {
 	ofPath path;
 
-	path.rectangle(x, y, 50, 50);
+	path.rectangle(x - x, y - y, w, h);
 
-	Drawable newDrawable(path, "", x, y);
+	DrawableObject newDrawable(path, currentId++, "", x, y, w, h);
 
-	scene.addDrawable(newDrawable);
+	newDrawable.getPosition = [](DrawableObject *drawable) { return (ofVec3f(drawable->x, drawable->y, drawable->z)); };
+
+	scene.addDrawable(newDrawable, true);
 
 	return (true);
 }
 
-bool CmdController::makePremadeCircle(int x, int y, int z)
+bool CmdController::makePremadeEllipse(int x, int y, int z, int w, int h)
 {
 	ofPath path;
 
-	path.arc(x, y, 50, 50, 0, 360);
+	//path.arc(x, y, 50, 50, 0, 360);
 
-	Drawable newDrawable(path, "", x, y);
+	path.ellipse(x - x, y - y, w, h);
 
-	scene.addDrawable(newDrawable);
+	DrawableObject newDrawable(path, currentId++, "", x, y, w, h);
+
+	newDrawable.getPosition = [](DrawableObject *drawable) { return (ofVec3f(drawable->x - (drawable->w / 2) * drawable->s, drawable->y - (drawable->h / 2) * drawable->s, drawable->z)); };
+	//newDrawable.getPosition = [](Drawable *drawable) { return (ofVec3f(drawable->x, drawable->y, drawable->z)); };
+
+	scene.addDrawable(newDrawable, true);
 
 	return (true);
 }
@@ -431,15 +627,13 @@ bool CmdController::makePremadeCube(int x, int y, int z)
 
 	box.set(100);
 
-	x = ofGetWidth()*.2;
-
-	y = ofGetHeight()*.75;
-
 	box.setPosition(x, y, z);
 
-	Drawable newDrawable(box, "SomeBox");
+	DrawableObject newDrawable(box, currentId++, "");
 
-	scene.addDrawable(newDrawable);
+	newDrawable.getPosition = [](DrawableObject *drawable) { return (ofVec3f(drawable->x, drawable->y, drawable->z)); };
+
+	scene.addDrawable(newDrawable, true);
 
 	return (true);
 }
@@ -448,19 +642,15 @@ bool CmdController::makePremadeSphere(int x, int y, int z)
 {
 	ofSpherePrimitive sphere;
 
-
-
 	sphere.setRadius(100);
-
-	x = ofGetWidth()*.2;
-
-	y = ofGetHeight()*.75;
 
 	sphere.setPosition(x, y, z);
 
-	Drawable newDrawable(sphere, "SomeSphere");
+	DrawableObject newDrawable(sphere, currentId++, "");
 
-	scene.addDrawable(newDrawable);
+	newDrawable.getPosition = [](DrawableObject *drawable) { return (ofVec3f(drawable->x, drawable->y, drawable->z)); };
+
+	scene.addDrawable(newDrawable, true);
 
 	return (true);
 }
@@ -471,15 +661,13 @@ bool CmdController::makePremadeCone(int x, int y, int z)
 
 	cone.set(50, 100, 4, 4);
 
-	x = ofGetWidth()*.2;
-
-	y = ofGetHeight()*.75;
-
 	cone.setPosition(x, y, z);
 
-	Drawable newDrawable(cone, "SomeCone");
+	DrawableObject newDrawable(cone, currentId++, "");
 
-	scene.addDrawable(newDrawable);
+	newDrawable.getPosition = [](DrawableObject *drawable) { return (ofVec3f(drawable->x, drawable->y, drawable->z)); };
+
+	scene.addDrawable(newDrawable, true);
 
 	return (true);
 }
@@ -490,15 +678,13 @@ bool CmdController::makePremadeCylinder(int x, int y, int z)
 
 	cylinder.set(50, 100);
 
-	x = ofGetWidth()*.2;
-
-	y = ofGetHeight()*.75;
-
 	cylinder.setPosition(x, y, z);
 
-	Drawable newDrawable(cylinder, "SomeCylinder");
+	DrawableObject newDrawable(cylinder, currentId++, "");
 
-	scene.addDrawable(newDrawable);
+	newDrawable.getPosition = [](DrawableObject *drawable) { return (ofVec3f(drawable->x, drawable->y, drawable->z)); };
+
+	scene.addDrawable(newDrawable, true);
 
 	return (true);
 }
@@ -509,15 +695,49 @@ bool CmdController::makePremadePlane(int x, int y, int z)
 
 	plane.set(640, 480);
 
-	x = ofGetWidth()*.2;
-
-	y = ofGetHeight()*.75;
-
 	plane.setPosition(x, y, z);
 
-	Drawable newDrawable(plane, "SomePlane");
+	DrawableObject newDrawable(plane, currentId++, "");
 
-	scene.addDrawable(newDrawable);
+	newDrawable.getPosition = [](DrawableObject *drawable) { return (ofVec3f(drawable->x, drawable->y, drawable->z)); };
+
+	scene.addDrawable(newDrawable, true);
+
+	return (true);
+}
+
+bool CmdController::captureScreen(const std::string &exportPath)
+{
+	ofImage screenshot;
+
+	screenshot.grabScreen(0, 0, ofGetWidth(), ofGetHeight());
+
+	screenshot.save(exportPath);
+
+	return (true);
+}
+
+bool CmdController::loadModel(const std::string &path, int x, int y, int z)
+{
+	ofxAssimpModelLoader newModel;
+	ofFile file;
+
+	std::string absPath = ofFilePath::getAbsolutePath(path);
+
+	file.open(absPath);
+
+	if (!file.exists())
+		return (false);
+
+	newModel.loadModel(path);
+
+	newModel.setPosition(x, y, z);
+
+	DrawableObject newDrawable(newModel, currentId++, "");
+
+	newDrawable.getPosition = [](DrawableObject *drawable) { return (ofVec3f(drawable->x, drawable->y, drawable->z)); };
+
+	scene.addDrawable(newDrawable, true);
 
 	return (true);
 }
@@ -526,9 +746,9 @@ bool CmdController::applyTexture(const std::string &path, const std::string &nam
 {
 	ofImage newImage;
 	ofFile file;
-	Drawable *drawable = scene.getDrawable(name);
+	DrawableObject *drawable = scene.getDrawable(name);
 
-	if (drawable == NULL || drawable->type != MODEL)
+	if (drawable == NULL || (drawable->type != PRIMITIVE && drawable->type != MODEL))
 		return (false);
 
 	std::string absPath = ofFilePath::getAbsolutePath(path);
@@ -537,7 +757,7 @@ bool CmdController::applyTexture(const std::string &path, const std::string &nam
 
 	if (!file.exists())
 	{
-		Drawable *image = scene.getDrawable(path);
+		DrawableObject *image = scene.getDrawable(path);
 
 		if (image == NULL || image->type != IMAGE)
 			return (false);
@@ -549,7 +769,55 @@ bool CmdController::applyTexture(const std::string &path, const std::string &nam
 		newImage.load(path);
 	}
 
-	drawable->model.texture = newImage.getTexture();
+	drawable->primitive.texture = newImage.getTexture();
+
+	return (true);
+}
+
+bool CmdController::renderFaces(const std::string &name)
+{
+	DrawableObject *drawable;
+
+	drawable = scene.getDrawable(name);
+	if (drawable == NULL || (drawable->type != MODEL && drawable->type != PRIMITIVE))
+		return (false);
+
+	if (drawable->type == MODEL)
+		drawable->model.renderType = FACES;
+	else
+		drawable->primitive.renderType = FACES;
+
+	return (true);
+}
+
+bool CmdController::renderWireFrame(const std::string &name)
+{
+	DrawableObject *drawable;
+
+	drawable = scene.getDrawable(name);
+	if (drawable == NULL || (drawable->type != MODEL && drawable->type != PRIMITIVE))
+		return (false);
+
+	if (drawable->type == MODEL)
+		drawable->model.renderType = WIREFRAME;
+	else
+		drawable->primitive.renderType = WIREFRAME;
+
+	return (true);
+}
+
+bool CmdController::renderVertices(const std::string &name)
+{
+	DrawableObject *drawable;
+
+	drawable = scene.getDrawable(name);
+	if (drawable == NULL || (drawable->type != MODEL && drawable->type != PRIMITIVE))
+		return (false);
+
+	if (drawable->type == MODEL)
+		drawable->model.renderType = VERTICES;
+	else
+		drawable->primitive.renderType = VERTICES;
 
 	return (true);
 }
